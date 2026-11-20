@@ -490,19 +490,22 @@ function viewQuiz() {
     if (shown) {
       if (scorable(q) && isCorrect(q, i)) cls = 'correct';
       else if (i === chosen) cls = scorable(q) ? 'wrong' : 'chosen';
+      if (!scorable(q) && i === q.best_index) cls += ' suggested';
     } else if (i === chosen) cls = 'chosen';
     opts += `<li><button class="opt ${cls}" data-i="${i}" ${shown ? 'disabled' : ''}><span class="lab">${esc(q.option_labels[i])}</span><span class="md">${md(o)}</span></button></li>`;
   });
 
   let fb = '';
   if (shown) {
-    if (q.answer_status === 'dropped') fb = `<div class="feedback neutral">This question was dropped in the official key (marks to all).</div>`;
-    else if (!scorable(q)) fb = `<div class="feedback neutral">No answer key exists for this question. Practice only.</div>`;
+    const sugg = q.best_index != null ? ` Suggested answer (not official): <strong>(${esc(q.option_labels[q.best_index])})</strong>` : '';
+    if (q.answer_status === 'dropped') fb = `<div class="feedback neutral">This question was dropped in the official key (marks to all).${sugg}</div>`;
+    else if (!scorable(q)) fb = `<div class="feedback neutral">No answer key exists for this question.${sugg || ' Practice only.'}</div>`;
     else if (chosen == null) fb = `<div class="feedback neutral">Not answered. Correct answer: <strong>${answerText(q)}</strong></div>`;
     else if (isCorrect(q, chosen)) fb = `<div class="feedback good">✓ Correct${Array.isArray(q.answer_index) ? ` (the key accepts ${answerText(q)})` : ''}</div>`;
     else fb = `<div class="feedback bad">✗ Incorrect. Correct answer: <strong>${answerText(q)}</strong></div>`;
     if (q.answer_status === 'unofficial') fb += `<div class="note">⚠️ This answer comes from an unofficial key. Double-check it.</div>`;
     if (q.answer_note) fb += `<div class="note">Key note: ${esc(q.answer_note)}</div>`;
+    if (q.key_doubt) fb += `<div class="note">⚠️ The key's answer looks doubtful. The explanation below gives the reason.</div>`;
   }
 
   const palBtn = (id, i) => {
@@ -542,6 +545,7 @@ function viewQuiz() {
       ${q.image ? `<img class="qimg" src="${imgSrc(q.image)}" alt="Figure for question ${q.number}">` : ''}
       <ol class="options">${opts}</ol>
       ${fb}
+      ${shown && q.explanation ? `<div class="explain"><div class="explain-head">Explanation</div><div class="md">${md(q.explanation)}</div></div>` : ''}
       ${shown && q.notes ? `<div class="note">Note: ${esc(q.notes)}</div>` : ''}
       <div class="qnav">
         <button class="btn" id="prev" ${s.idx === 0 ? 'disabled' : ''}>← Previous</button>
