@@ -89,6 +89,10 @@ img.qimg { display: block; max-width: 100%; margin: .6rem auto; border-radius: 6
 .opt.correct .lab { background: var(--good); color: #fff; border-color: var(--good); }
 .opt.wrong { border-color: var(--bad); background: var(--bad-soft); }
 .opt.wrong .lab { background: var(--bad); color: #fff; border-color: var(--bad); }
+.opt.suggested { border-style: dashed; border-color: var(--good); }
+.explain { margin-top: .8rem; padding: .6rem .9rem; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; background: var(--bg); }
+.explain-head { font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); }
+.explain .md p { margin: .4rem 0; } .explain .md ul, .explain .md ol { margin: .4rem 0; padding-left: 1.3rem; }
 .feedback { margin-top: .8rem; padding: .6rem .8rem; border-radius: 8px; }
 .feedback.good { background: var(--good-soft); color: var(--good); }
 .feedback.bad { background: var(--bad-soft); color: var(--bad); }
