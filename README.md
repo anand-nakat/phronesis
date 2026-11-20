@@ -1,4 +1,6 @@
-# UGC NET PYQ practice site
+# Phronesis: UGC NET PYQ practice site
+
+*Phronesis* (Greek φρόνησις) is Aristotle's word for practical wisdom: knowing how to act well in a real situation. The site's tagline is "Practical wisdom for UGC NET".
 
 A static site for practising Paper 1 and Philosophy previous-year questions (114 papers, 6,910 questions). It has no build step and no server code.
 
@@ -9,6 +11,9 @@ A static site for practising Paper 1 and Philosophy previous-year questions (114
 | `app.js` | The app | Paste |
 | `quiz-data.json` | All papers and explanations, with the 21 images embedded (8.2 MB) | Upload: **Add file → Upload files** on the repo page, then drag it in |
 | `README.md` | This file | Optional |
+
+## Look and theme
+The design uses the Plus Jakarta Sans font from Google Fonts. If the font can't load, the page falls back to the system font without delay. Light and dark themes follow the device setting until you use the moon/sun button in the top bar; that choice is then remembered in this browser. On phones, the main sections are in a tab bar at the bottom.
 
 ## Full exams
 The Papers page defaults to **Full exam**: the Paper 1 and Philosophy papers of the same sitting attempted together (150 questions, 3 hours for NTA papers). There are 33 of these, built in `app.js` from the single papers, so `quiz-data.json` needs no change. Single papers are still available under "Paper 1 only" and "Philosophy only".
@@ -34,4 +39,4 @@ Opening `index.html` straight from disk won't load the data, because browsers bl
 Then open http://127.0.0.1:8791/. (Port 8765 is used by the Trading project's server.)
 
 ## Where progress is stored
-Attempts, bookmarks and exam history are saved in the browser's localStorage. Use **Stats → Export progress / Import progress** to move them between devices.
+Attempts, bookmarks and exam history are saved in the browser's localStorage. Each submitted exam keeps your full answer sheet (for the 60 most recent exams), so you can reopen it from **Answers** in any attempts table and see what you picked, the key, and the explanation for every question. Exams taken before this feature keep only their score. Use **Stats → Export progress / Import progress** to move them between devices.
