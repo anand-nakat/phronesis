@@ -536,3 +536,12 @@ input[type=number] { font-variant-numeric: tabular-nums; }
 }
 
 @media (max-width: 720px) { .brand .logo { width: 32px; height: 32px; } .brand-name { font-size: 1.08rem; } .brand-tag { font-size: .68rem; } }
+
+/* exam bar: mark/clear are icon buttons on phone so Next always fits */
+#mark.on { color: var(--mark); border-color: color-mix(in srgb, var(--mark) 55%, var(--line)); background: color-mix(in srgb, var(--mark) 10%, var(--card)); }
+@media (max-width: 720px) {
+  .qnav { gap: .4rem; }
+  .qnav .btn:not(.primary) { width: 44px; padding: 0; }
+  .qnav #next, .qnav #finish, .qnav a.btn.primary { flex: 1 1 0; min-width: 0; padding: .5rem .6rem; }
+}
+@media (max-width: 350px) { .qnav #next svg { display: none; } }

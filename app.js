@@ -97,6 +97,7 @@ const ICONS = {
   bookmark: '<path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/>', flag: '<path d="M5 21V4h12l-2.5 4.5L17 13H5"/>',
   download: '<path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>', upload: '<path d="M12 16V4M7 9l5-5 5 5M4 21h16"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  eraser: '<path d="M7 20h13M4.6 13.4l8.8-8.8a2 2 0 0 1 2.8 0l3.2 3.2a2 2 0 0 1 0 2.8L12 18.0a2 2 0 0 1-1.4.6H8.2a2 2 0 0 1-1.4-.6l-2.2-2.2a2 2 0 0 1 0-2.8zM9 9l6 6"/>',
   grid: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>',
   inbox: '<path d="M3 13h5l2 3h4l2-3h5M5.5 5h13L21 13v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6z"/>',
 };
@@ -649,7 +650,7 @@ function viewQuiz() {
         ${shown && q.notes ? `<div class="note">${ic('info')}<span>Note: ${esc(q.notes)}</span></div>` : ''}
         <div class="qnav">
           <button class="btn" id="prev" ${s.idx === 0 ? 'disabled' : ''} aria-label="Previous">${ic('arrowL')}<span class="hide-sm">Previous</span></button>
-          ${exam ? `<button class="btn" id="mark">${ic('flag')}<span>${s.marked[q.id] ? 'Unmark' : 'Mark'}<span class="hide-sm">${s.marked[q.id] ? '' : ' for review'}</span></span></button>${chosen != null ? '<button class="btn ghost" id="clear">Clear</button>' : ''}` : ''}
+          ${exam ? `<button class="btn${s.marked[q.id] ? ' on' : ''}" id="mark" title="${s.marked[q.id] ? 'Unmark' : 'Mark for review'} (M)" aria-label="${s.marked[q.id] ? 'Unmark' : 'Mark for review'}">${ic('flag')}<span class="hide-sm">${s.marked[q.id] ? 'Unmark' : 'Mark for review'}</span></button>${chosen != null ? `<button class="btn ghost" id="clear" title="Clear answer" aria-label="Clear answer">${ic('eraser')}<span class="hide-sm">Clear</span></button>` : ''}` : ''}
           <span class="spacer"></span>
           <button class="btn only-sm" id="toPal" aria-label="All questions">${ic('grid')}</button>
           ${s.idx < s.qids.length - 1 ? `<button class="btn primary" id="next">Next${ic('arrowR')}</button>` : s.kind === 'practice' ? '<button class="btn primary" id="finish">Finish</button>' : s.submitted ? '<a class="btn primary" href="#/result">Results</a>' : ''}
