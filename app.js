@@ -636,7 +636,7 @@ function viewQuiz() {
         <div class="qhead">
           <span class="qnum">Q${s.idx + 1}</span>
           <span class="badge" title="${esc(p.session_label)}">${esc(subjectName(p))} · ${esc(when)} · Q${q.number}</span>
-          ${q.unit ? `<span class="badge accent" title="${esc(unitName(p.subject_code, q.unit))}">Unit ${q.unit}: ${esc(unitName(p.subject_code, q.unit))}</span>` : ''}
+          ${q.unit && !exam ? `<span class="badge accent" title="${esc(unitName(p.subject_code, q.unit))}">Unit ${q.unit}: ${esc(unitName(p.subject_code, q.unit))}</span>` : ''}
           ${!exam ? `<span class="badge ${sc}">${esc(sl)}</span>` : ''}
           <button class="star ${starred ? 'on' : ''}" id="star" title="Bookmark (S)" aria-label="Bookmark">${ic('star')}</button>
         </div>
