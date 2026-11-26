@@ -546,14 +546,38 @@ input[type=number] { font-variant-numeric: tabular-nums; }
 }
 @media (max-width: 350px) { .qnav #next svg { display: none; } }
 
-/* score by paper */
-.sections { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
-.sect { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
-.sect:last-child { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
-.sect .l { font-weight: 700; color: var(--ink); font-size: .92rem; }
-.sect .v { font-size: 1.7rem; font-weight: 800; color: var(--ink); letter-spacing: -.02em; margin: .2rem 0 .1rem; }
-.sect .v span { font-size: 1rem; color: var(--muted); font-weight: 600; }
-.sect .s { font-size: .8rem; color: var(--muted); margin-bottom: .6rem; }
+/* exam summary: ring | paper bars | facts */
+.sum { display: grid; grid-template-columns: 180px minmax(0, 1fr) 220px; gap: 2rem; align-items: center; padding: 1.5rem 1.6rem; }
+.sum > div { min-width: 0; }
+.sum-ring { --p: 0; --c: var(--accent); width: 170px; height: 170px; border-radius: 50%; background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--line-2) 0); display: grid; place-items: center; position: relative; }
+.sum-ring::before { content: ''; position: absolute; inset: 15px; border-radius: 50%; background: var(--card); }
+.sum-ring > div { position: relative; text-align: center; }
+.sum-ring b { display: block; font-size: 2.3rem; color: var(--ink); letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+.sum-ring span { font-size: .82rem; color: var(--muted); font-weight: 600; }
+.prow { padding: .85rem 0; border-bottom: 1px solid var(--line-2); }
+.prow:first-child { padding-top: 0; } .prow:last-of-type { border-bottom: 0; }
+.prow .top { display: flex; align-items: baseline; gap: .6rem; margin-bottom: .5rem; }
+.prow .top .n { font-weight: 700; color: var(--ink); }
+.prow .top .s { margin-left: auto; font-weight: 800; color: var(--ink); font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.prow .top .s span { font-size: .85rem; color: var(--muted); font-weight: 600; }
+.prow .cnt { font-size: .8rem; color: var(--muted); margin-top: .4rem; }
+.segbar { display: flex; height: 10px; border-radius: 99px; overflow: hidden; background: var(--line-2); gap: 2px; }
+.segbar i { display: block; height: 100%; min-width: 0; }
+.segbar .g { background: var(--good); } .segbar .r { background: var(--bad); } .segbar .b { background: var(--line); }
+.sum-facts { display: grid; gap: .6rem; }
+.fact { display: flex; align-items: center; gap: .7rem; padding: .65rem .85rem; border-radius: 12px; background: var(--raised); border: 1px solid var(--line-2); }
+.fact .ic { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; flex: none; }
+.fact .l { font-size: .84rem; color: var(--muted); white-space: nowrap; }
+.fact .v { margin-left: auto; font-weight: 800; color: var(--ink); font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.result-actions { margin-left: auto; }
+@media (max-width: 1000px) { .sum { grid-template-columns: 160px minmax(0, 1fr); } .sum-ring { width: 150px; height: 150px; } .sum-facts { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); } }
+@media (max-width: 720px) {
+  .sum { grid-template-columns: 1fr; gap: 1.1rem; padding: 1.2rem 1rem; }
+  .sum-ring { margin: 0 auto; }
+  .sum-facts { grid-template-columns: 1fr; }
+  .result-actions { margin-left: 0; width: 100%; } .result-actions .btn { flex: 1 1 100%; }
+}
+
 /* cut-offs: your total + one card per goal */
 .cutoff { padding: 1.4rem 1.5rem; }
 .cx-head { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }

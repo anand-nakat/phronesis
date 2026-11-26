@@ -387,14 +387,27 @@ function bindCutoff(rerender) {
   const sel = $('#cutCat');
   if (sel) sel.onchange = (e) => { store.prefs.cat = e.target.value; save(); rerender(); };
 }
-function sectionTiles(secs) {
-  if (secs.length < 2) return '';
-  const got = secs.reduce((m, x) => m + x.got, 0), max = secs.reduce((m, x) => m + x.max, 0);
-  const tile = (label, sub, g, m) => `<div class="sect"><div class="l">${label}</div><div class="v">${g}<span>/${m}</span></div><div class="s">${sub}</div><div class="bar"><div style="width:${pct(g, m)}%;background:${pct(g, m) >= 60 ? 'var(--good)' : pct(g, m) >= 40 ? 'var(--warn)' : 'var(--bad)'}"></div></div></div>`;
-  return `<div class="sections">${secs.map((x, i) => tile(
-    x.paper.subject_code === '00' ? 'Paper 1' : `Paper ${x.paper.original_paper && x.paper.conducted_by === 'CBSE' ? x.paper.original_paper : 2}<span class="hide-sm"> · Philosophy</span>`,
-    `${x.cbse50 ? 'First 50 answered count · ' : ''}${x.c} correct · ${x.w} wrong · ${x.total - x.c - x.w - x.d} blank${x.d ? ` · ${x.d} dropped` : ''}`, x.got, x.max)).join('')}
-    ${tile('Total', `${pct(got, max)}% of ${max} marks`, got, max)}</div>`;
+// One summary card: total ring | a stacked correct/wrong/blank bar per paper | the counts and time
+function summaryCard(secs, secsTaken) {
+  if (!secs.length) return '';
+  const sum = (f) => secs.reduce((m, x) => m + f(x), 0);
+  const got = sum((x) => x.got), max = sum((x) => x.max), pc = pct(got, max);
+  const right = sum((x) => x.c), wrong = sum((x) => x.w), dropped = sum((x) => x.d);
+  const blank = sum((x) => x.n - x.c - x.w - x.d);
+  const tone = pc >= 60 ? 'var(--good)' : pc >= 40 ? 'var(--warn)' : 'var(--bad)';
+  const name = (x) => (x.paper.subject_code === '00' ? 'Paper 1' : `Paper ${x.paper.conducted_by === 'CBSE' && x.paper.original_paper ? x.paper.original_paper : 2} · Philosophy`);
+  const row = (x) => {
+    const b = x.n - x.c - x.w - x.d, k = x.total - x.n;
+    return `<div class="prow"><div class="top"><span class="n">${name(x)}</span><span class="s">${x.got}<span>/${x.max}</span></span></div>
+      <div class="segbar" role="img" aria-label="${x.c} correct, ${x.w} wrong, ${b} blank"><i class="g" style="flex:${x.c + x.d}"></i><i class="r" style="flex:${x.w}"></i><i class="b" style="flex:${b + k}"></i></div>
+      <div class="cnt">${x.cbse50 ? 'First 50 answered count · ' : ''}${x.c} correct · ${x.w} wrong · ${b} blank${x.d ? ` · ${x.d} dropped` : ''}${k ? ` · ${k} without a key` : ''}</div></div>`;
+  };
+  const fact = (icn, col, l, v) => `<div class="fact"><span class="ic ${col}">${ic(icn)}</span><span class="l">${l}</span><span class="v">${v}</span></div>`;
+  return `<div class="card sum">
+    <div class="sum-ring" style="--p:${pc};--c:${tone}"><div><b>${got}</b><span>of ${max} · ${pc}%</span></div></div>
+    <div class="sum-papers">${secs.map(row).join('')}${dropped ? `<p class="small muted" style="margin:.4rem 0 0">Dropped questions count as correct, as in the real result.</p>` : ''}</div>
+    <div class="sum-facts">${fact('check', 'green', 'Correct', right)}${fact('x', 'red', 'Wrong', wrong)}${fact('minus', 'neutral', 'Not answered', blank)}${fact('clock', 'neutral', 'Time taken', fmtTime(secsTaken))}</div>
+  </div>`;
 }
 
 /* ---------- views ---------- */
@@ -828,23 +841,13 @@ function viewResult() {
   const mixed = new Set(Object.values(byUnit).map((v) => v.code)).size > 1;
   const tone = (x) => (x >= 60 ? 'var(--good)' : x >= 40 ? 'var(--warn)' : 'var(--bad)');
   const secs = sectionScores(s.qids, s.answers);
-  const pc = pct(r.marks, r.outOf);
+  const pc = pct(secs.reduce((m, x) => m + x.got, 0), secs.reduce((m, x) => m + x.max, 0));
   app().innerHTML = `
-    <div class="card result-hero">
-      <div class="ring" style="--p:${pc};--c:${tone(pc)}"><div><div class="v">${pc}%</div><div class="l">${r.marks}/${r.outOf} marks</div></div></div>
-      <div><h1>${pc >= 60 ? 'Great score' : pc >= 40 ? 'Good effort' : 'Keep practising'}</h1>
-        <p class="sub">${esc(s.title)}<br>${r.marks * 2}/${r.outOf * 2} marks · ${fmtTime(r.secs)}${r.dropped ? ` · ${r.dropped} dropped counted as correct` : ''}${r.unscored ? ` · ${r.unscored} without a key not scored` : ''}</p>
-        <div class="row"><button class="btn primary" id="review">Review answers</button>
-          <button class="btn" id="wrongOnly">${ic('rotate')}Practise the ones I missed</button>
-          <button class="btn ghost" id="close">Close</button></div></div>
-      <div class="tiles">
-        ${metric('check', 'green', r.correct, 'correct')}
-        ${metric('x', 'red', r.wrong, 'wrong')}
-        ${metric('minus', 'neutral', r.outOf - r.correct - r.wrong - r.dropped, 'unanswered')}
-        ${metric('clock', 'neutral', fmtTime(r.secs), 'time taken')}
-      </div>
-    </div>
-    ${secs.length > 1 ? `<h2>Score by paper</h2>${sectionTiles(secs)}` : ''}
+    <div class="page-head"><div><h1>${pc >= 60 ? 'Great score' : pc >= 40 ? 'Good effort' : 'Keep practising'}</h1><p>${esc(s.title)}</p></div>
+      <div class="row result-actions"><button class="btn primary" id="review">Review answers</button>
+        <button class="btn" id="wrongOnly">${ic('rotate')}Practise the ones I missed</button>
+        <button class="btn ghost" id="close">Close</button></div></div>
+    ${summaryCard(secs, r.secs)}
     ${cutoffPanel(DB.byPaper[s.paperId], secs)}
     <h2>By unit</h2>
     <div class="card tablecard">${Object.keys(byUnit).sort().map((k) => byUnit[k]).map((v) => `
@@ -946,10 +949,9 @@ function viewAttempt(t) {
   setNav('stats');
   const h = store.history.find((x) => String(x.t) === String(t));
   if (!h) { app().innerHTML = `<div class="card empty">${ic('inbox')}<p>This attempt was not found.</p><a class="btn" href="#/stats">Back to stats</a></div>`; return; }
-  const pc = pct(h.marks, h.outOf);
   const when = new Date(h.t).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const head = `<a class="crumb" href="${h.paperId ? '#/paper/' + h.paperId : '#/stats'}">${ic('chevL')}${h.paperId ? 'Back to paper' : 'Stats'}</a>
-    <div class="page-head"><div><h1>${esc(h.title)}</h1><p>Your answers · ${when} · ${h.marks}/${h.outOf} (${pc}%) · ${fmtTime(h.secs)}</p></div></div>`;
+    <div class="page-head"><div><h1>${esc(h.title)}</h1><p>Your answers · ${when}</p></div></div>`;
   if (!h.answers) {
     app().innerHTML = head + `<div class="card empty">${ic('inbox')}<p>Answers weren't saved for this attempt, only its score.<br>Exams you take from now on keep every answer, so you can review them here.</p></div>`;
     return;
@@ -969,11 +971,7 @@ function viewAttempt(t) {
   const rows = all.filter((r) => f === 'all' || r.s === f);
   const lab = (q, i) => (i == null ? '–' : `(${esc(q.option_labels[i])})`);
   app().innerHTML = head + `
-    <div class="tiles" style="margin-bottom:1rem">
-      ${metric('check', 'green', n('right'), 'correct')}${metric('x', 'red', n('wrong'), 'wrong')}
-      ${metric('minus', 'neutral', n('blank'), 'not answered')}${metric('clock', 'neutral', fmtTime(h.secs), 'time taken')}
-    </div>
-    ${(() => { const sc = sectionScores(qids, h.answers); return (sc.length > 1 ? sectionTiles(sc) : '') + cutoffPanel(DB.byPaper[h.paperId], sc); })()}
+    ${(() => { const sc = sectionScores(qids, h.answers); return summaryCard(sc, h.secs) + cutoffPanel(DB.byPaper[h.paperId], sc); })()}
     <div class="toolbar"><div class="seg" id="sheetF">${[['all', 'All', all.length], ['wrong', 'Wrong', n('wrong')], ['blank', 'Not answered', n('blank')], ['right', 'Correct', n('right')]]
       .map(([v, l, c]) => `<button data-v="${v}" class="${f === v ? 'on' : ''}">${l} <span class="muted">${c}</span></button>`).join('')}</div></div>
     ${rows.length ? rows.map(({ id, i, s }) => {
