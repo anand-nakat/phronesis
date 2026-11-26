@@ -18,6 +18,9 @@ The design uses the Plus Jakarta Sans font from Google Fonts. If the font can't 
 ## Full exams
 The Papers page defaults to **Full exam**: the Paper 1 and Philosophy papers of the same sitting attempted together (150 questions, 3 hours for NTA papers). There are 33 of these, built in `app.js` from the single papers, so `quiz-data.json` needs no change. Single papers are still available under "Paper 1 only" and "Philosophy only".
 
+## Scores and cut-offs
+After a full exam, the result shows Paper 1, Paper 2 and the total separately, and compares the total with that cycle's official Philosophy JRF and Assistant Professor cut-offs for the category you pick (remembered in this browser). The paper page shows the same cut-offs before you start. For CBSE papers (2012–2017) Paper 1 had 60 questions of which the first 50 answered are marked, as in the real exam. Cut-off data lives in `data/cutoffs.json`.
+
 ## Deploy on GitHub Pages
 1. Create a repository and add the four files above to its root.
 2. Go to **Settings → Pages → Build and deployment**. Choose *Deploy from a branch*, then `main` and `/ (root)`, and save.

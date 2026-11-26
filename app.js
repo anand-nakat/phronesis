@@ -173,7 +173,7 @@ async function loadData() {
   const papers = raw.papers.slice().sort((a, b) => sortKey(b).localeCompare(sortKey(a)) || a.subject_code.localeCompare(b.subject_code));
   const fulls = buildFulls(papers);
   for (const f of fulls) byPaper[f.paper_id] = f;
-  DB = { papers, fulls, byPaper, byQ, groups, units: raw.units, images: raw.images };
+  DB = { papers, fulls, byPaper, byQ, groups, units: raw.units, images: raw.images, cutoffs: raw.cutoffs || null };
 }
 // One combined attempt per Philosophy sitting: Paper 1 first, then Philosophy, as in the real exam.
 // CBSE-era sessions join Paper I + II (+ III), which were sat separately on the same day.
@@ -306,6 +306,95 @@ async function submitExam(auto) {
   store.history = store.history.slice(0, 200);
   save();
   location.hash = '#/result';
+}
+
+/* ---------- section scores and JRF cut-offs ---------- */
+// Marks per paper of an attempt (2 marks a question; dropped questions count as correct, as NTA does)
+function sectionScores(qids, answers) {
+  const out = [];
+  for (const id of qids) {
+    const q = DB.byQ[id]; if (!q) continue;
+    let sec = out[out.length - 1];
+    if (!sec || sec.paper !== q.paper) out.push(sec = { paper: q.paper, c: 0, w: 0, d: 0, n: 0, total: 0 });
+    sec.total++;
+    const a = answers[id];
+    if (q.answer_status === 'dropped') { sec.d++; sec.n++; continue; }
+    if (!scorable(q)) continue;
+    sec.n++; if (a != null) isCorrect(q, a) ? sec.c++ : sec.w++;
+  }
+  for (const sec of out) {
+    sec.got = (sec.c + sec.d) * 2; sec.max = sec.total * 2;
+    // CBSE Paper I (2009 to Jan 2017): 60 questions, any 50 answered; only the first 50 answered are marked, out of 100
+    if (sec.paper.conducted_by === 'CBSE' && sec.paper.subject_code === '00' && sec.total === 60) {
+      let seen = 0, got = 0;
+      for (const id of qids) {
+        const q = DB.byQ[id]; if (!q || q.paper !== sec.paper || answers[id] == null) continue;
+        if (++seen > 50) break;
+        if (q.answer_status === 'dropped' || (scorable(q) && isCorrect(q, answers[id]))) got += 2;
+      }
+      sec.got = got; sec.max = 100; sec.cbse50 = true;
+    }
+  }
+  return out;
+}
+const CATS = { GEN: 'General', EWS: 'EWS', OBC: 'OBC-NCL', SC: 'SC', ST: 'ST', PwD: 'PwD' };
+function cutoffFor(p) {
+  if (!DB.cutoffs || !p) return null;
+  const phil = p.full ? p.parts.find((x) => x.subject_code === '03') : p.subject_code === '03' ? p : null;
+  if (!phil) return null;
+  const c = DB.cutoffs.cycles?.[phil.session_key];
+  return c && c.jrf ? c : null;
+}
+// Card comparing a full-exam score with that cycle's Philosophy cut-offs. secs: sectionScores(); null = no score yet.
+function cutoffPanel(p, secs) {
+  const c = cutoffFor(p);
+  if (!c) return '';
+  const cats = Object.keys(CATS).filter((k) => c.jrf[k] != null);
+  const cat = cats.includes(store.prefs.cat) ? store.prefs.cat : cats[0];
+  const pctU = c.unit === 'percent';
+  const fmt = (v) => (pctU ? `${v}%` : `${v}`);
+  const phil = p.full ? p.parts.find((x) => x.subject_code === '03') : p;
+  let mine = null, got = 0, max = 0, partial = false;
+  if (secs && p.full) {
+    got = secs.reduce((m, x) => m + x.got, 0);
+    max = secs.reduce((m, x) => m + x.max, 0);
+    partial = secs.some((x) => x.n < x.total);
+    mine = pctU ? Math.round((1000 * got) / max) / 10 : got;
+  }
+  const unitWord = (d) => (pctU ? `${Math.round(d * 100) / 100} point${d === 1 ? '' : 's'}` : `${d} mark${d === 1 ? '' : 's'}`);
+  const goal = (label, key) => {
+    const v = c[key]?.[cat];
+    if (v == null) return '';
+    if (mine == null) return `<div class="goal"><div class="gring idle"><b>${fmt(v)}</b></div><div><div class="n">${label}</div><div class="c">${pctU ? `${fmt(v)} of aggregate marks` : `About ${Math.round((100 * v) / c.out_of)}% of ${c.out_of} marks`}</div></div></div>`;
+    const met = mine >= v, p100 = Math.min(100, Math.round((100 * mine) / v));
+    const diff = Math.round(Math.abs(mine - v) * 100) / 100;
+    return `<div class="goal${met ? ' met' : ''}"><div class="gring" style="--p:${met ? 100 : p100};--c:${met ? 'var(--good)' : p100 >= 75 ? 'var(--accent)' : 'var(--warn)'}">${met ? ic('check') : `<b>${p100}%</b>`}</div>
+      <div><div class="n">${label}</div><div class="c">Cut-off ${fmt(v)}</div><span class="pill ${met ? 'good' : 'warn'}">${met ? (diff ? `Cleared by ${unitWord(diff)}` : 'Exactly at the cut-off') : `${unitWord(diff)} to go`}</span></div></div>`;
+  };
+  const you = mine != null
+    ? `<div class="b-you"><div class="l">Your total</div><div class="v">${pctU ? `${mine}<span>%</span>` : `${got}<span>/${max}</span>`}</div>
+        <div class="split">${secs.map((x) => `${x.paper.subject_code === '00' ? 'Paper 1' : 'Paper ' + (x.paper.conducted_by === 'CBSE' && x.paper.original_paper ? x.paper.original_paper : 2)}: ${x.got}`).join(' · ')}${pctU ? ` · ${got}/${max} marks` : ''}</div></div>`
+    : `<div class="b-you"><div class="l">${secs ? 'Cut-offs apply to the full exam' : 'Your target'}</div><div class="split" style="margin-top:.35rem">${secs ? 'Attempt Paper 1 and Philosophy together to see where you stand.' : 'Take this as a full exam to see how your total compares.'}</div></div>`;
+  return `<div class="card cutoff">
+    <div class="cx-head"><div><h3>Cut-offs · ${esc(phil.session_label)}</h3><div class="sub">Philosophy · ${pctU ? `percentage of aggregate marks (out of ${c.out_of})` : `Paper 1 + Paper 2, out of ${c.out_of}`}${c.source_type === 'secondary' ? ' · secondary source' : ''}</div></div>
+      <label class="cat">Category <select id="cutCat">${cats.map((k) => `<option value="${k}" ${k === cat ? 'selected' : ''}>${CATS[k]}</option>`).join('')}</select></label></div>
+    <div class="b-grid">${you}${goal('Assistant Professor', 'net')}${goal('JRF', 'jrf')}</div>
+    ${pctU && c.out_of === 350 ? '<p class="small muted">In this period CBSE also required minimum marks in each paper (General: 40% in Papers I and II, 50% in Paper III) before the aggregate cut-off applied.</p>' : ''}
+    ${partial ? '<p class="small muted">Some questions had no answer key or were dropped; dropped questions count as correct, as in the real result.</p>' : ''}
+    ${c.source_url ? `<p class="small" style="margin-bottom:0"><a href="${esc(c.source_url)}" target="_blank" rel="noopener">${c.source_type === 'official' ? 'Official cut-off notice' : 'Source'}</a></p>` : ''}</div>`;
+}
+function bindCutoff(rerender) {
+  const sel = $('#cutCat');
+  if (sel) sel.onchange = (e) => { store.prefs.cat = e.target.value; save(); rerender(); };
+}
+function sectionTiles(secs) {
+  if (secs.length < 2) return '';
+  const got = secs.reduce((m, x) => m + x.got, 0), max = secs.reduce((m, x) => m + x.max, 0);
+  const tile = (label, sub, g, m) => `<div class="sect"><div class="l">${label}</div><div class="v">${g}<span>/${m}</span></div><div class="s">${sub}</div><div class="bar"><div style="width:${pct(g, m)}%;background:${pct(g, m) >= 60 ? 'var(--good)' : pct(g, m) >= 40 ? 'var(--warn)' : 'var(--bad)'}"></div></div></div>`;
+  return `<div class="sections">${secs.map((x, i) => tile(
+    x.paper.subject_code === '00' ? 'Paper 1' : `Paper ${x.paper.original_paper && x.paper.conducted_by === 'CBSE' ? x.paper.original_paper : 2}<span class="hide-sm"> · Philosophy</span>`,
+    `${x.cbse50 ? 'First 50 answered count · ' : ''}${x.c} correct · ${x.w} wrong · ${x.total - x.c - x.w - x.d} blank${x.d ? ` · ${x.d} dropped` : ''}`, x.got, x.max)).join('')}
+    ${tile('Total', `${pct(got, max)}% of ${max} marks`, got, max)}</div>`;
 }
 
 /* ---------- views ---------- */
@@ -475,7 +564,9 @@ function viewPaper(id) {
       ${done.length ? `<p class="small">You've attempted ${done.length}/${p.questions.length} (${right} correct).</p>` : ''}
       ${inFull ? `<p class="small"><a href="#/paper/${inFull.paper_id}">Attempt this as a full exam (${inFull.parts.map((x) => esc(subjectName(x))).join(' + ')}) →</a></p>` : ''}
     </div>
+    ${cutoffPanel(p, null)}
     ${hist.length ? `<h2>Your attempts</h2><div class="card tablecard">${historyTable(hist)}</div>` : ''}`;
+  bindCutoff(() => viewPaper(id));
   const all = p.questions.map((q) => q.id);
   $('#practice').onclick = () => startSession({ kind: 'practice', title: paperTitle(p), paperId: id, qids: all, sections: !!p.full });
   const rest = $('#practiceRest');
@@ -736,18 +827,7 @@ function viewResult() {
   }
   const mixed = new Set(Object.values(byUnit).map((v) => v.code)).size > 1;
   const tone = (x) => (x >= 60 ? 'var(--good)' : x >= 40 ? 'var(--warn)' : 'var(--bad)');
-  const secRows = !s.sections ? '' : sectionsOf(s).map((sec) => {
-    let c = 0, w = 0, d = 0, n = 0;
-    for (const id of sec.ids) {
-      const q = DB.byQ[id], a = s.answers[id];
-      if (q.answer_status === 'dropped') { d++; n++; continue; }
-      if (!scorable(q)) continue;
-      n++; if (a != null) isCorrect(q, a) ? c++ : w++;
-    }
-    return `<tr><td><strong>${esc(subjectName(sec.paper))}</strong><div class="muted small">${n ? `${c} correct · ${w} wrong · ${n - c - w - d} blank${d ? ` · ${d} dropped` : ''}` : ''}</div></td>
-      <td class="num">${n ? `${c + d}/${n}` : 'no key'}</td><td class="num hide-sm">${n ? `${(c + d) * 2}/${n * 2} marks` : '–'}</td>
-      <td style="width:28%"><div class="bar"><div style="width:${pct(c + d, n)}%;background:${tone(pct(c + d, n))}"></div></div></td></tr>`;
-  }).join('');
+  const secs = sectionScores(s.qids, s.answers);
   const pc = pct(r.marks, r.outOf);
   app().innerHTML = `
     <div class="card result-hero">
@@ -764,7 +844,8 @@ function viewResult() {
         ${metric('clock', 'neutral', fmtTime(r.secs), 'time taken')}
       </div>
     </div>
-    ${secRows ? `<h2>By section</h2><div class="card tablecard"><table class="stats"><tbody>${secRows}</tbody></table></div>` : ''}
+    ${secs.length > 1 ? `<h2>Score by paper</h2>${sectionTiles(secs)}` : ''}
+    ${cutoffPanel(DB.byPaper[s.paperId], secs)}
     <h2>By unit</h2>
     <div class="card tablecard">${Object.keys(byUnit).sort().map((k) => byUnit[k]).map((v) => `
       <div class="unitrow"><div class="uname">${mixed ? `<span class="badge">${SUBJECTS[v.code]}</span>` : ''}<span>${v.unit > 0 ? `${v.unit}. ${esc(unitName(v.code, v.unit))}` : 'Untagged'}</span></div><div class="n">${v.c}/${v.n}</div>
@@ -776,6 +857,7 @@ function viewResult() {
     startSession({ kind: 'practice', title: `Missed in ${s.title}`, paperId: s.paperId, qids: ids, sections: s.sections });
   };
   $('#close').onclick = () => { const pid = s.paperId; store.session = null; save(); location.hash = pid ? `#/paper/${pid}` : '#/'; };
+  bindCutoff(viewResult);
 }
 
 /* ---- review ---- */
@@ -891,6 +973,7 @@ function viewAttempt(t) {
       ${metric('check', 'green', n('right'), 'correct')}${metric('x', 'red', n('wrong'), 'wrong')}
       ${metric('minus', 'neutral', n('blank'), 'not answered')}${metric('clock', 'neutral', fmtTime(h.secs), 'time taken')}
     </div>
+    ${(() => { const sc = sectionScores(qids, h.answers); return (sc.length > 1 ? sectionTiles(sc) : '') + cutoffPanel(DB.byPaper[h.paperId], sc); })()}
     <div class="toolbar"><div class="seg" id="sheetF">${[['all', 'All', all.length], ['wrong', 'Wrong', n('wrong')], ['blank', 'Not answered', n('blank')], ['right', 'Correct', n('right')]]
       .map(([v, l, c]) => `<button data-v="${v}" class="${f === v ? 'on' : ''}">${l} <span class="muted">${c}</span></button>`).join('')}</div></div>
     ${rows.length ? rows.map(({ id, i, s }) => {
@@ -900,6 +983,7 @@ function viewAttempt(t) {
         <span class="txt">${esc(plainText(q.question_md).slice(0, 200))}</span>
         <span class="ans">You <b class="${s === 'wrong' ? 'bad' : s === 'right' ? 'good' : ''}">${lab(q, h.answers[id])}</b>${scorable(q) ? ` · Key <b>${answerText(q)}</b>` : ''}</span></summary><div class="abody"></div></details>`;
     }).join('') : `<div class="card empty">${ic('check')}<p>Nothing here.</p></div>`}`;
+  bindCutoff(() => viewAttempt(t));
   $('#sheetF').onclick = (e) => { const b = e.target.closest('[data-v]'); if (b) { viewAttempt.f = b.dataset.v; viewAttempt(t); } };
   app().querySelectorAll('details.arow').forEach((d) => (d.ontoggle = () => {
     const body = d.querySelector('.abody');

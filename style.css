@@ -545,3 +545,48 @@ input[type=number] { font-variant-numeric: tabular-nums; }
   .qnav #next, .qnav #finish, .qnav a.btn.primary { flex: 1 1 0; min-width: 0; padding: .5rem .6rem; }
 }
 @media (max-width: 350px) { .qnav #next svg { display: none; } }
+
+/* score by paper */
+.sections { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+.sect { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.sect:last-child { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.sect .l { font-weight: 700; color: var(--ink); font-size: .92rem; }
+.sect .v { font-size: 1.7rem; font-weight: 800; color: var(--ink); letter-spacing: -.02em; margin: .2rem 0 .1rem; }
+.sect .v span { font-size: 1rem; color: var(--muted); font-weight: 600; }
+.sect .s { font-size: .8rem; color: var(--muted); margin-bottom: .6rem; }
+/* cut-offs: your total + one card per goal */
+.cutoff { padding: 1.4rem 1.5rem; }
+.cx-head { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.cx-head h3 { font-size: 1.02rem; margin: 0; }
+.cx-head .sub { font-size: .84rem; color: var(--muted); }
+.cutoff .cat { margin-left: auto; display: flex; gap: .5rem; align-items: center; font-size: .86rem; color: var(--muted); }
+.cutoff .cat select { min-height: 36px; font-size: .9rem; }
+.b-grid { display: grid; grid-template-columns: 1.05fr 1fr 1fr; gap: .9rem; margin: 1.2rem 0 .6rem; }
+.b-you { border-radius: 14px; padding: 1.1rem 1.2rem; background: var(--raised); border: 1px solid var(--line-2); display: flex; flex-direction: column; justify-content: center; }
+.b-you .l { font-size: .82rem; color: var(--muted); font-weight: 600; }
+.b-you .v { font-size: 2.4rem; font-weight: 800; color: var(--ink); letter-spacing: -.03em; line-height: 1.1; }
+.b-you .v span { font-size: 1rem; color: var(--muted); font-weight: 600; letter-spacing: 0; }
+.b-you .split { font-size: .82rem; color: var(--muted); margin-top: .3rem; line-height: 1.45; }
+.goal { display: flex; gap: 1rem; align-items: center; border-radius: 14px; padding: 1rem 1.1rem; border: 1px solid var(--line); background: var(--card); }
+.goal.met { border-color: color-mix(in srgb, var(--good) 45%, var(--line)); background: color-mix(in srgb, var(--good) 6%, var(--card)); }
+.gring { --p: 0; --c: var(--accent); flex: none; width: 74px; height: 74px; border-radius: 50%; background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--line-2) 0); display: grid; place-items: center; position: relative; }
+.gring::before { content: ''; position: absolute; inset: 8px; border-radius: 50%; background: var(--card); }
+.goal.met .gring::before { background: color-mix(in srgb, var(--good) 6%, var(--card)); }
+.gring.idle { background: var(--line-2); }
+.gring b { position: relative; font-size: .95rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+.gring svg { position: relative; width: 26px; height: 26px; fill: none; stroke: var(--good); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.goal .n { font-weight: 800; color: var(--ink); font-size: 1rem; }
+.goal .c { font-size: .84rem; color: var(--muted); margin: .1rem 0 .35rem; }
+.pill { display: inline-flex; align-items: center; gap: .35rem; padding: .28rem .7rem; border-radius: 99px; font-weight: 700; font-size: .84rem; }
+.pill.good { background: var(--good-soft); color: var(--good-ink); }
+.pill.warn { background: var(--warn-soft); color: var(--warn-ink); }
+@media (max-width: 900px) { .b-grid { grid-template-columns: 1fr 1fr; } .b-grid .b-you { grid-column: 1 / -1; } }
+@media (max-width: 720px) { .cutoff { padding: 1.1rem 1rem; } .b-grid { grid-template-columns: 1fr; } .cutoff .cat { margin-left: 0; } }
+@media (max-width: 720px) {
+  .sections { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .45rem; }
+  .sections .sect { padding: .75rem .7rem; }
+  .sections .sect .l { font-size: .78rem; line-height: 1.25; min-height: 2em; }
+  .sections .sect .v { font-size: 1.25rem; }
+  .sections .sect .v span { font-size: .8rem; }
+  .sections .sect .s { display: none; }
+}
