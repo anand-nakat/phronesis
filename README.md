@@ -18,6 +18,14 @@ The design uses the Plus Jakarta Sans font from Google Fonts. If the font can't 
 ## Full exams
 The Papers page defaults to **Full exam**: the Paper 1 and Philosophy papers of the same sitting attempted together (150 questions, 3 hours for NTA papers). There are 33 of these, built in `app.js` from the single papers, so `quiz-data.json` needs no change. Single papers are still available under "Paper 1 only" and "Philosophy only".
 
+## Syllabus topics
+Every question from 2021 on, and every mock question, is mapped to its UGC syllabus topic and, where the syllabus lists one, the exact item (for example *Unit 1 › Nyāya › Hetvābhāsa*). Practice mode shows the unit at once and the topic after you answer (so the topic does not give the answer away); exams hide both until you submit, then show them in review and on the answer sheet.
+
+The exam result and every answer sheet break the score down by unit, one section per paper; open a unit to see its topics. Stats shows accuracy by unit and topic for all your attempts combined, or, with the **Show** selector, for one paper you have attempted (a full exam, a single paper or a mock).
+
+## Mock papers
+Papers → **Mocks** lists numbered mock exams written by Phronesis in the pattern of recent NTA papers. Each mock has a Paper 1 (50 questions) and a Philosophy paper (100 questions), and a full exam that joins them into one 150-question, 3-hour sitting. Mock 1 follows the averaged pattern of the June 2024 – June 2026 papers; later mocks each copy the layout of one real shift. Each mock has a level (real-exam level, easier or harder), which is shown only on the result and answer sheet after the attempt is submitted. Home has a Mock exams banner with every mock, your best score in each and the next one to take. Mocks do not repeat each other's topics. A mock full exam shows the latest real cut-offs for reference. Mocks are clearly labelled, are kept out of the previous-year lists, random practice and unit stats, and their sources are in `data/mocks/` (built with `cook/mocks/`).
+
 ## Scores and cut-offs
 After a full exam, the result shows Paper 1, Paper 2 and the total separately, and compares the total with that cycle's official Philosophy JRF and Assistant Professor cut-offs for the category you pick (remembered in this browser). The paper page shows the same cut-offs before you start. For CBSE papers (2012–2017) Paper 1 had 60 questions of which the first 50 answered are marked, as in the real exam. Cut-off data lives in `data/cutoffs.json`.
 

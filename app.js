@@ -8,6 +8,7 @@ const STATUS = {
   official_multiple: ['Official key · several options accepted', 'good'],
   dropped: ['Dropped · marks to all', 'warn'],
   unofficial: ['Unofficial key', 'warn'],
+  mock: ['Mock answer key', 'accent'],
   pending: ['No key · practice only', ''],
   unavailable: ['No key · practice only', ''],
 };
@@ -65,6 +66,7 @@ function paperTitle(p) {
   return `${subjectName(p)} · ${paperWhen(p)}`;
 }
 function paperKey(p) {
+  if (p.mock) return ['Mock paper', 'accent'];
   if (p.answered_count === 0) return ['No key', ''];
   if (p.key_partial) return ['Key for some sections only', 'warn'];
   return p.answer_key_official ? ['Official key', 'good'] : ['Unofficial key', 'warn'];
@@ -105,6 +107,15 @@ const ic = (n) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ''}
 const metric = (icn, color, v, label) => `<div class="metric"><div class="ic ${color}">${ic(icn)}</div><div class="v">${v}</div><div class="l">${label}</div></div>`;
 
 function unitName(code, u) { return DB.units[code]?.units[String(u)] || (u ? 'Unit ' + u : 'Untagged'); }
+// Unit › syllabus topic › syllabus item, e.g. "Unit 1 · Classical Indian … › Nyāya › Hetvābhāsa"
+function topicLine(q, unitOnly) {
+  if (!q.unit && !q.topic) return '';
+  const code = q.paper.subject_code, sep = '<span class="sep">›</span>';
+  const parts = [`<span class="u">Unit ${q.unit}<span class="hide-sm"> · ${esc(unitName(code, q.unit))}</span></span>`];
+  if (!unitOnly && q.topic && DB.topics[q.topic]) parts.push(`<span class="t">${esc(DB.topics[q.topic])}</span>`);
+  if (!unitOnly && q.item && DB.topics[q.item]) parts.push(`<span class="i">${esc(DB.topics[q.item])}</span>`);
+  return `<div class="qtopic" title="${esc(unitName(code, q.unit))}">${ic('book')}<span class="path">${parts.join(sep)}</span></div>`;
+}
 function plainText(md) { return md.replace(/\\([\\`*_{}\[\]()#+\-.!|~])/g, '$1').replace(/\|/g, ' ').replace(/[*`#>-]+/g, ' ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(); }
 
 /* ---------- markdown (subset: paragraphs, pipe tables, lists, bold/italic/code, sub/sup/u) ---------- */
@@ -173,22 +184,50 @@ async function loadData() {
   const papers = raw.papers.slice().sort((a, b) => sortKey(b).localeCompare(sortKey(a)) || a.subject_code.localeCompare(b.subject_code));
   const fulls = buildFulls(papers);
   for (const f of fulls) byPaper[f.paper_id] = f;
-  DB = { papers, fulls, byPaper, byQ, groups, units: raw.units, images: raw.images, cutoffs: raw.cutoffs || null };
+  // Mock papers written for practice: reachable by id, but kept out of the PYQ lists, pools and stats
+  const mocks = (raw.mocks || []).slice();
+  for (const p of mocks) {
+    p.mock = true; byPaper[p.paper_id] = p;
+    for (const g of p.groups) groups[g.id] = g;
+    for (const q of p.questions) { q.paper = p; byQ[q.id] = q; }
+  }
+  // The Paper 1 and Philosophy papers of each mock form a mock full exam; list mock by mock, full exam first
+  for (const f of buildFulls(mocks)) {
+    const ph = f.parts.find((x) => x.subject_code === '03');
+    Object.assign(f, { mock: true, conducted_by: 'Phronesis', paper_id: ph.paper_id.replace(/^mock-phil-/, 'mock-full-'), mock_no: ph.mock_no, mock_level: ph.mock_level,
+      mock_title: `${f.session_label.replace(/ · /, ' · Full exam · ')}`,
+      mock_note: `Paper 1 and Philosophy mock papers in one sitting, as in the real exam: 150 questions, 3 hours, 2 marks each, no negative marking. ${ph.mock_layout_note || ''}Written by Phronesis; not an NTA paper.` });
+    byPaper[f.paper_id] = f; mocks.push(f);
+  }
+  const order = (p) => (p.full ? 0 : p.subject_code === '00' ? 1 : 2);
+  mocks.sort((a, b) => (a.mock_no || 1) - (b.mock_no || 1) || order(a) - order(b));
+  DB = { papers, fulls, mocks, byPaper, byQ, groups, units: raw.units, topics: raw.topics || {}, images: raw.images, cutoffs: raw.cutoffs || null };
 }
 // One combined attempt per Philosophy sitting: Paper 1 first, then Philosophy, as in the real exam.
 // CBSE-era sessions join Paper I + II (+ III), which were sat separately on the same day.
+const MOCK_LEVEL = {
+  real: ['Real-exam level', 'This mock was set at the level of the real paper, so your score is a fair guide to the real exam.'],
+  easier: ['Easier than the real exam', 'This mock was set a little easier than the real paper. Expect your real-exam score to be somewhat lower.'],
+  harder: ['Harder than the real exam', 'This mock was set harder than the real paper, with closer distractors and less common syllabus points. Your real-exam score may well be higher.'],
+};
+// The level of a mock is revealed only after the attempt is submitted
+function mockLevelNote(p) {
+  const l = p && p.mock && MOCK_LEVEL[p.mock_level];
+  return l ? `<div class="note levelnote">${ic('target')}<span><b>Difficulty of this mock: ${l[0]}.</b> ${l[1]}</span></div>` : '';
+}
 function buildFulls(papers) {
   const sittings = {};
   for (const p of papers) {
     if (p.subject_code !== '03') continue;
-    const k = [p.session_key, p.exam_date || '', p.shift || ''].join('|');
+    const k = [p.session_key, p.exam_date || '', p.shift || '', p.mock_no || ''].join('|');
     (sittings[k] || (sittings[k] = [])).push(p);
   }
   const fulls = [];
   for (const phil of Object.values(sittings)) {
     const x = phil[0];
     const session = papers.filter((p) => p.subject_code === '00' && p.session_key === x.session_key);
-    const p1 = session.find((p) => x.exam_date && p.exam_date === x.exam_date && p.shift === x.shift) || (session.length === 1 ? session[0] : null);
+    const p1 = x.mock_no ? session.find((p) => p.mock_no === x.mock_no)
+      : session.find((p) => x.exam_date && p.exam_date === x.exam_date && p.shift === x.shift) || (session.length === 1 ? session[0] : null);
     if (!p1) continue;
     phil.sort((a, b) => String(a.original_paper).localeCompare(String(b.original_paper)));
     const parts = [p1, ...phil];
@@ -261,7 +300,7 @@ function recordAttempt(q, choice) {
   const prev = store.attempts[q.id];
   store.attempts[q.id] = {
     a: choice, c: scorable(q) ? isCorrect(q, choice) : null,
-    s: q.paper.subject_code, u: q.unit || 0, n: (prev?.n || 0) + 1, t: Date.now(),
+    s: q.paper.mock ? 'mock' : q.paper.subject_code, u: q.unit || 0, n: (prev?.n || 0) + 1, t: Date.now(),
   };
 }
 
@@ -342,6 +381,11 @@ function cutoffFor(p) {
   if (!DB.cutoffs || !p) return null;
   const phil = p.full ? p.parts.find((x) => x.subject_code === '03') : p.subject_code === '03' ? p : null;
   if (!phil) return null;
+  if (phil.mock) { // no real cut-off yet: compare with the latest published cycle
+    const k = Object.keys(DB.cutoffs.cycles).filter((x) => DB.cutoffs.cycles[x]?.jrf).sort().pop();
+    const lab = DB.papers.find((x) => x.subject_code === '03' && x.session_key === k)?.session_label || k;
+    return k ? { ...DB.cutoffs.cycles[k], refLabel: `${lab} (latest real cut-offs, for reference)` } : null;
+  }
   const c = DB.cutoffs.cycles?.[phil.session_key];
   return c && c.jrf ? c : null;
 }
@@ -376,7 +420,7 @@ function cutoffPanel(p, secs) {
         <div class="split">${secs.map((x) => `${x.paper.subject_code === '00' ? 'Paper 1' : 'Paper ' + (x.paper.conducted_by === 'CBSE' && x.paper.original_paper ? x.paper.original_paper : 2)}: ${x.got}`).join(' · ')}${pctU ? ` · ${got}/${max} marks` : ''}</div></div>`
     : `<div class="b-you"><div class="l">${secs ? 'Cut-offs apply to the full exam' : 'Your target'}</div><div class="split" style="margin-top:.35rem">${secs ? 'Attempt Paper 1 and Philosophy together to see where you stand.' : 'Take this as a full exam to see how your total compares.'}</div></div>`;
   return `<div class="card cutoff">
-    <div class="cx-head"><div><h3>Cut-offs · ${esc(phil.session_label)}</h3><div class="sub">Philosophy · ${pctU ? `percentage of aggregate marks (out of ${c.out_of})` : `Paper 1 + Paper 2, out of ${c.out_of}`}${c.source_type === 'secondary' ? ' · secondary source' : ''}</div></div>
+    <div class="cx-head"><div><h3>Cut-offs · ${esc(c.refLabel || phil.session_label)}</h3><div class="sub">Philosophy · ${pctU ? `percentage of aggregate marks (out of ${c.out_of})` : `Paper 1 + Paper 2, out of ${c.out_of}`}${c.source_type === 'secondary' ? ' · secondary source' : ''}</div></div>
       <label class="cat">Category <select id="cutCat">${cats.map((k) => `<option value="${k}" ${k === cat ? 'selected' : ''}>${CATS[k]}</option>`).join('')}</select></label></div>
     <div class="b-grid">${you}${goal('Assistant Professor', 'net')}${goal('JRF', 'jrf')}</div>
     ${pctU && c.out_of === 350 ? '<p class="small muted">In this period CBSE also required minimum marks in each paper (General: 40% in Papers I and II, 50% in Paper III) before the aggregate cut-off applied.</p>' : ''}
@@ -436,6 +480,8 @@ function viewHome() {
   const nExpl = DB.papers.reduce((n, p) => n + p.questions.filter((q) => q.explanation).length, 0);
   const latest = (code) => DB.papers.find((p) => p.subject_code === code && p.answered_count > 0);
   const latestFull = DB.fulls.find((p) => p.answered_count > 0);
+  const mockFulls = DB.mocks.filter((p) => p.full);
+  const nextMock = mockFulls.find((p) => !store.history.some((h) => h.paperId === p.paper_id)) || mockFulls[mockFulls.length - 1] || DB.mocks[0];
   const p1 = latest('00'), ph = latest('03');
   const last = store.history.slice(0, 5);
   const qs = (attrs, icn, color, t, sub, feature) => {
@@ -459,6 +505,7 @@ function viewHome() {
       </div>
     </section>
     ${resumeBanner()}
+    ${mockBanner(mockFulls, nextMock)}
     <div class="section-head"><h2>Start practising</h2></div>
     <div class="quick">
       ${latestFull ? qs(`href="#/paper/${latestFull.paper_id}"`, 'layers', '', 'Latest full exam', `${esc(latestFull.session_label)} · Paper 1 + Philosophy · ${latestFull.questions.length} questions`, true) : ''}
@@ -478,6 +525,25 @@ function viewHome() {
   }));
 }
 
+function mockBanner(fulls, next) {
+  if (!fulls.length) return '';
+  const best = (p) => store.history.filter((h) => h.paperId === p.paper_id).reduce((m, h) => Math.max(m, pct(h.marks, h.outOf)), -1);
+  const taken = fulls.filter((p) => best(p) >= 0).length;
+  const allDone = taken === fulls.length;
+  return `<section class="mockband">
+    <div class="mb-top">
+      <span class="ic blue">${ic('target')}</span>
+      <div class="mb-text"><h2>Mock exams for December 2026</h2>
+        <p>${fulls.length} full-length mocks written in the pattern of recent NTA papers. Paper 1 + Philosophy, 150 questions, 3 hours, with explanations.</p></div>
+      <a class="btn primary mb-cta" href="#/paper/${next.paper_id}">${ic('play')}${allDone ? 'Retake' : taken ? 'Continue with' : 'Start'} Mock ${next.mock_no || 1}</a>
+    </div>
+    <div class="mb-list">${fulls.map((p) => { const b = best(p); return `<a class="mb-item${b >= 0 ? ' done' : ''}${p === next && !allDone ? ' next' : ''}" href="#/paper/${p.paper_id}">
+      <span class="mb-n">Mock ${p.mock_no || 1}</span>
+      <span class="mb-s">${b >= 0 ? `${ic('check')}Best ${b}%` : p === next && !allDone ? 'Up next' : 'Not taken'}</span></a>`; }).join('')}</div>
+    <p class="mb-foot">${taken ? `${taken} of ${fulls.length} taken.` : 'Take them in order, under exam conditions.'} Each mock's difficulty is shown after you submit it.</p>
+  </section>`;
+}
+
 function historyTable(rows) {
   return `<table class="stats"><thead><tr><th>Paper</th><th class="hide-sm">When</th><th class="num">Score</th><th class="num hide-sm">Time</th><th></th></tr></thead><tbody>
     ${rows.map((h) => { const pc = pct(h.marks, h.outOf); return `<tr><td>${h.paperId ? `<a href="#/paper/${h.paperId}">${esc(h.title)}</a>` : esc(h.title)}</td>
@@ -490,26 +556,27 @@ function historyTable(rows) {
 function viewPapers() {
   setNav('papers');
   const pr = Object.assign({ subj: 'full', from: 2017 }, store.prefs.papers);
-  if (!['full', '00', '03'].includes(pr.subj)) pr.subj = 'full';
+  if (!['full', '00', '03', 'mock'].includes(pr.subj) || (pr.subj === 'mock' && !DB.mocks.length)) pr.subj = 'full';
   const years = [...new Set(DB.papers.map(yearOf))].sort((a, b) => b - a);
-  const list = (pr.subj === 'full' ? DB.fulls : DB.papers.filter((p) => p.subject_code === pr.subj)).filter((p) => yearOf(p) >= pr.from);
+  const list = pr.subj === 'mock' ? DB.mocks : (pr.subj === 'full' ? DB.fulls : DB.papers.filter((p) => p.subject_code === pr.subj)).filter((p) => yearOf(p) >= pr.from);
   const extraP1 = DB.papers.filter((p) => p.subject_code === '00' && yearOf(p) >= pr.from).length - list.length;
-  let html = `<div class="page-head"><div><h1>Papers</h1><p>${list.length} ${pr.subj === 'full' ? 'full exams' : 'papers'} from ${pr.from} onward, newest first</p></div></div>
+  let html = `<div class="page-head"><div><h1>Papers</h1><p>${pr.subj === 'mock' ? (() => { const n = list.filter((p) => p.full).length || list.length; return `${n} mock exam${n === 1 ? '' : 's'}, each as a full exam or as separate papers`; })() : `${list.length} ${pr.subj === 'full' ? 'full exams' : 'papers'} from ${pr.from} onward, newest first`}</p></div></div>
     ${resumeBanner()}
     <div class="toolbar">
-      <div class="seg" id="subj">${[['full', 'Full exam'], ['00', 'Paper 1'], ['03', 'Philosophy']].map(([v, l]) => `<button data-v="${v}" class="${pr.subj === v ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <div class="seg" id="subj">${[['full', 'Full exam'], ['00', 'Paper 1'], ['03', 'Philosophy']].concat(DB.mocks.length ? [['mock', 'Mocks']] : []).map(([v, l]) => `<button data-v="${v}" class="${pr.subj === v ? 'on' : ''}">${l}</button>`).join('')}</div>
       <span class="spacer"></span>
-      <label class="filters">From <select id="from">${years.map((y) => `<option ${y === pr.from ? 'selected' : ''}>${y}</option>`).join('')}</select></label>
+      <label class="filters"${pr.subj === 'mock' ? ' hidden' : ''}>From <select id="from">${years.map((y) => `<option ${y === pr.from ? 'selected' : ''}>${y}</option>`).join('')}</select></label>
     </div>
+    ${pr.subj === 'mock' ? '<p class="muted small">Mock papers are new questions written by Phronesis, not NTA papers. Each mock follows the layout of recent NTA shifts (June 2024 – June 2026) and tests different topics from the other mocks.</p>' : ''}
     ${pr.subj === 'full' ? `<p class="muted small">A full exam is the Paper 1 and Philosophy paper of the same sitting, attempted together.${extraP1 > 0 ? ` ${extraP1} more Paper 1 shifts (no Philosophy paper that day) are under “Paper 1”.` : ''}</p>` : ''}`;
   let lastYear = null;
   for (const p of list) {
-    const y = yearOf(p);
-    if (y !== lastYear) { html += `<div class="year">${y}</div>`; lastYear = y; }
+    const y = p.mock ? `Mock ${p.mock_no || 1}` : yearOf(p);
+    if (y !== lastYear) { html += `<div class="year">${esc(String(y))}</div>`; lastYear = y; }
     const done = p.questions.filter((q) => store.attempts[q.id]).length;
     const best = store.history.filter((h) => h.paperId === p.paper_id).reduce((m, h) => Math.max(m, pct(h.marks, h.outOf)), -1);
     const [kl, kc] = paperKey(p);
-    const [icn, col] = p.full ? ['layers', 'green'] : p.subject_code === '00' ? ['file', 'neutral'] : ['book', 'neutral'];
+    const [icn, col] = p.mock ? ['target', 'blue'] : p.full ? ['layers', 'green'] : p.subject_code === '00' ? ['file', 'neutral'] : ['book', 'neutral'];
     html += `<a class="card paper" href="#/paper/${p.paper_id}">
       <span class="pi ic ${col}">${ic(icn)}</span>
       <div class="body"><div class="title">${esc(paperTitle(p))}</div>
@@ -525,6 +592,7 @@ function viewPapers() {
 }
 
 function defaultMinutes(p) {
+  if (p.mock && p.full) return 180;
   if (p.full) return p.conducted_by === 'NTA' ? 180 : p.parts.reduce((m, x) => m + defaultMinutes(x), 0);
   if (p.session_key === '2018-07') return p.subject_code === '00' ? 60 : 120;
   if (p.conducted_by === 'CBSE') return p.original_paper === 'III' ? 150 : 75;
@@ -549,12 +617,12 @@ function viewPaper(id) {
     const src = x.source || {}, range = `Q${from}–${(from += x.questions.length) - 1}`;
     return `${p.full ? `<h2>${esc(subjectName(x))} <span class="muted small">${range} · <a href="#/paper/${x.paper_id}">attempt on its own</a></span></h2>` : ''}
       ${x.instructions_note ? `<p class="small">${esc(x.instructions_note)}</p>` : ''}
-      ${!x.answer_key_official && x.answered_count ? `<div class="note warn">${ic('alert')}<span>${esc(src.answer_key_notes || 'Answers come from an unofficial source.')}</span></div>` : ''}
+      ${!x.mock && !x.answer_key_official && x.answered_count ? `<div class="note warn">${ic('alert')}<span>${esc(src.answer_key_notes || 'Answers come from an unofficial source.')}</span></div>` : ''}
       ${!x.answered_count ? `<div class="note warn">${ic('alert')}<span>No answer key was published for this paper, so it is not scored.</span></div>` : ''}
       <p class="small links">${src.question_paper_url ? `<a href="${esc(src.question_paper_url)}" target="_blank" rel="noopener">Original question paper</a>` : ''}
         ${src.answer_key_url ? ` · <a href="${esc(src.answer_key_url)}" target="_blank" rel="noopener">Answer key source</a>` : ''}</p>`;
   }).join('');
-  const fullNote = !p.full ? '' : p.conducted_by === 'NTA'
+  const fullNote = p.mock ? esc(p.mock_note || 'A mock paper written by Phronesis, not an NTA paper.') : !p.full ? '' : p.conducted_by === 'NTA'
     ? 'Paper 1 and Philosophy in one sitting, as in the real exam: 3 hours, 2 marks per question, no negative marking.'
     : 'In this session the papers were sat separately on the same day. Here they run back to back in one attempt; the default time is the sum of the original time limits.';
   app().innerHTML = `
@@ -571,7 +639,7 @@ function viewPaper(id) {
           <button class="btn primary" id="exam">Start exam</button></div></div>
     </div>
     <div class="card info">
-      <div class="kv"><span class="badge ${kc}">${kl}</span>${Object.entries(counts).map(([k, n]) => `<span class="badge">${n} ${({ official: 'with official answers', official_multiple: 'with several accepted answers', dropped: 'dropped', unofficial: 'with unofficial answers', pending: 'without a key', unavailable: 'without a key' })[k] || k}</span>`).join('')}${nExpl ? `<span class="badge accent">${nExpl} with explanations</span>` : ''}</div>
+      <div class="kv"><span class="badge ${kc}">${kl}</span>${(p.mock ? [] : Object.entries(counts)).map(([k, n]) => `<span class="badge">${n} ${({ official: 'with official answers', official_multiple: 'with several accepted answers', dropped: 'dropped', unofficial: 'with unofficial answers', pending: 'without a key', unavailable: 'without a key' })[k] || k}</span>`).join('')}${nExpl ? `<span class="badge accent">${nExpl} with explanations</span>` : ''}</div>
       ${fullNote ? `<p class="small">${fullNote}</p>` : ''}
       ${partInfo}
       ${done.length ? `<p class="small">You've attempted ${done.length}/${p.questions.length} (${right} correct).</p>` : ''}
@@ -723,7 +791,7 @@ function viewQuiz() {
   const starN = s.qids.filter((id) => store.bookmarks[id]).length;
   const markN = s.qids.filter((id) => s.marked[id]).length;
   const answeredN = Object.keys(s.answers).length;
-  const when = p.exam_date ? fmtDate(p.exam_date) + (p.shift ? ' S' + p.shift : '') : p.session_label;
+  const when = p.exam_date ? fmtDate(p.exam_date) + (p.shift ? ' S' + p.shift : '') : p.mock ? p.session_label.replace(/ · (\w{3})\w* /, ' $1 ') : p.session_label;
 
   app().innerHTML = `
     <div class="quizbar">
@@ -740,10 +808,10 @@ function viewQuiz() {
         <div class="qhead">
           <span class="qnum">Q${s.idx + 1}</span>
           <span class="badge" title="${esc(p.session_label)}">${esc(subjectName(p))} · ${esc(when)} · Q${q.number}</span>
-          ${q.unit && !exam ? `<span class="badge accent" title="${esc(unitName(p.subject_code, q.unit))}">Unit ${q.unit}: ${esc(unitName(p.subject_code, q.unit))}</span>` : ''}
           ${!exam ? `<span class="badge ${sc}">${esc(sl)}</span>` : ''}
           <button class="star ${starred ? 'on' : ''}" id="star" title="Bookmark (S)" aria-label="Bookmark">${ic('star')}</button>
         </div>
+        ${exam ? '' : topicLine(q, !shown)}
         ${g ? `<details class="group" open><summary>${g.kind === 'passage' ? 'Passage' : g.kind === 'data_table' ? 'Data' : 'Figure'} for this question</summary>
           <div class="md">${md(g.md)}</div>${g.image ? `<img class="qimg" src="${imgSrc(g.image)}" alt="">` : ''}</details>` : ''}
         <div class="md qtext">${md(q.question_md)}</div>
@@ -825,21 +893,55 @@ function startTimer() {
 }
 function stopTimer() { if (timerHandle) clearInterval(timerHandle); timerHandle = null; }
 
+/* ---- unit → topic breakdown (result page, answer sheet, stats) ---- */
+// outcome(id): undefined = not attempted, true/false = right/wrong, null = attempted but not scorable
+function breakdown(qids, outcome) {
+  const subj = {}, blank = () => ({ avail: 0, n: 0, sc: 0, c: 0 });
+  const add = (r, o) => { r.avail++; if (o !== undefined) { r.n++; if (o !== null) { r.sc++; if (o) r.c++; } } };
+  for (const id of qids) {
+    const q = DB.byQ[id]; if (!q || q.answer_status === 'dropped') continue;
+    const code = q.paper.subject_code, o = outcome(id);
+    const S = subj[code] || (subj[code] = { code, ...blank(), units: {} });
+    const U = S.units[q.unit || 0] || (S.units[q.unit || 0] = { unit: q.unit || 0, ...blank(), topics: {} });
+    const T = U.topics[q.topic || ''] || (U.topics[q.topic || ''] = { id: q.topic || '', ...blank() });
+    add(S, o); add(U, o); add(T, o);
+  }
+  const tkey = (id) => (id ? id.split('.').slice(2).map((x) => (x === 'x' ? 999 : +x)) : [1000]);
+  return Object.values(subj).map((S) => ({ ...S, units: Object.values(S.units).sort((a, b) => a.unit - b.unit).map((U) => ({
+    ...U, topics: Object.values(U.topics).sort((a, b) => tkey(a.id)[0] - tkey(b.id)[0]) })) }));
+}
+// mode 'result': correct out of the questions in the exam; mode 'stats': attempted out of available, and accuracy
+function breakdownHTML(S, mode) {
+  const tone = (x) => (x >= 60 ? 'var(--good)' : x >= 40 ? 'var(--warn)' : 'var(--bad)');
+  const cells = (r) => {
+    const p = mode === 'result' ? pct(r.c, r.sc) : pct(r.c, r.sc);
+    const has = r.sc > 0;
+    return `<span class="num">${mode === 'result' ? `${r.c}/${r.sc}` : `${r.n}/${r.avail}`}</span><span class="num pc">${has ? p + '%' : '–'}</span>
+      <span class="bar"><div style="width:${has ? p : 0}%;background:${tone(p)}"></div></span>`;
+  };
+  const tname = (id) => (!id ? 'Not mapped to a topic' : id.endsWith('.x') ? 'Across several topics' : DB.topics[id] || id);
+  const head = `<div class="bd-row bd-head"><span>Unit${S.units.some((u) => u.topics.some((t) => t.id)) ? ' <span class="muted hide-sm">· open a unit to see its topics</span>' : ''}</span>
+    <span class="num">${mode === 'result' ? 'Correct' : '<span class="hide-sm">Attempted</span><span class="only-sm">Done</span>'}</span><span class="num pc">${mode === 'result' ? 'Score' : '<span class="hide-sm">Accuracy</span><span class="only-sm">Acc.</span>'}</span><span class="hide-sm"></span></div>`;
+  return `<div class="card tablecard bd">${head}${S.units.map((U) => {
+    const label = `${U.unit ? `${U.unit}. ${esc(unitName(S.code, U.unit))}` : 'Untagged'}`;
+    const topics = U.topics.filter((t) => mode === 'result' || t.n || t.id);
+    if (!U.topics.some((t) => t.id)) return `<div class="bd-row"><span class="nm">${label}</span>${cells(U)}</div>`;
+    return `<details class="bd-u"><summary class="bd-row"><span class="nm">${ic('chevR')}${label}</span>${cells(U)}</summary>
+      <div class="bd-topics">${topics.map((T) => `<div class="bd-row bd-t"><span class="nm">${esc(tname(T.id))}</span>${cells(T)}</div>`).join('')}</div></details>`;
+  }).join('')}</div>`;
+}
+
+// Unit → topic breakdown of one exam attempt, one section per paper (unanswered questions count as not correct)
+function examBreakdown(qids, answers) {
+  const subs = breakdown(qids, (id) => { const q = DB.byQ[id]; return scorable(q) ? answers[id] != null && isCorrect(q, answers[id]) : undefined; });
+  return `<h2>By unit and topic</h2>${subs.map((S) => `${subs.length > 1 ? `<h3 class="bd-sub">${esc(SUBJECTS[S.code])}</h3>` : ''}${breakdownHTML(S, 'result')}`).join('')}`;
+}
+
 function viewResult() {
   setNav('');
   const s = store.session;
   if (!s || !s.submitted) { location.hash = '#/'; return; }
   const r = s.result;
-  const byUnit = {};
-  for (const id of s.qids) {
-    const q = DB.byQ[id];
-    if (!scorable(q)) continue;
-    const k = q.paper.subject_code + ':' + String(q.unit || 0).padStart(2, '0');
-    const u = byUnit[k] || (byUnit[k] = { n: 0, c: 0, code: q.paper.subject_code, unit: q.unit || 0 });
-    u.n++; if (s.answers[id] != null && isCorrect(q, s.answers[id])) u.c++;
-  }
-  const mixed = new Set(Object.values(byUnit).map((v) => v.code)).size > 1;
-  const tone = (x) => (x >= 60 ? 'var(--good)' : x >= 40 ? 'var(--warn)' : 'var(--bad)');
   const secs = sectionScores(s.qids, s.answers);
   const pc = pct(secs.reduce((m, x) => m + x.got, 0), secs.reduce((m, x) => m + x.max, 0));
   app().innerHTML = `
@@ -848,11 +950,9 @@ function viewResult() {
         <button class="btn" id="wrongOnly">${ic('rotate')}Practise the ones I missed</button>
         <button class="btn ghost" id="close">Close</button></div></div>
     ${summaryCard(secs, r.secs)}
+    ${mockLevelNote(DB.byPaper[s.paperId])}
     ${cutoffPanel(DB.byPaper[s.paperId], secs)}
-    <h2>By unit</h2>
-    <div class="card tablecard">${Object.keys(byUnit).sort().map((k) => byUnit[k]).map((v) => `
-      <div class="unitrow"><div class="uname">${mixed ? `<span class="badge">${SUBJECTS[v.code]}</span>` : ''}<span>${v.unit > 0 ? `${v.unit}. ${esc(unitName(v.code, v.unit))}` : 'Untagged'}</span></div><div class="n">${v.c}/${v.n}</div>
-      <div class="bar"><div style="width:${pct(v.c, v.n)}%;background:${tone(pct(v.c, v.n))}"></div></div></div>`).join('')}</div>`;
+    ${examBreakdown(s.qids, s.answers)}`;
   $('#review').onclick = () => { s.idx = 0; save(); location.hash = '#/quiz'; };
   $('#wrongOnly').onclick = () => {
     const ids = s.qids.filter((id) => scorable(DB.byQ[id]) && !(s.answers[id] != null && isCorrect(DB.byQ[id], s.answers[id])));
@@ -890,25 +990,25 @@ function viewReview() {
 /* ---- stats ---- */
 function viewStats() {
   setNav('stats');
-  let html = `<div class="page-head"><div><h1>Stats</h1><p>Accuracy by unit, your exam history and your saved data.</p></div></div>`;
-  for (const code of Object.keys(SUBJECTS)) {
-    const avail = {};
-    DB.papers.filter((p) => p.subject_code === code).forEach((p) => p.questions.forEach((q) => (avail[q.unit || 0] = (avail[q.unit || 0] || 0) + 1)));
-    const rows = {};
-    Object.values(store.attempts).filter((a) => a.s === code).forEach((a) => {
-      const r = rows[a.u] || (rows[a.u] = { n: 0, sc: 0, c: 0 });
-      r.n++; if (a.c !== null) { r.sc++; if (a.c) r.c++; }
-    });
-    const tot = Object.values(rows).reduce((t, r) => ({ n: t.n + r.n, sc: t.sc + r.sc, c: t.c + r.c }), { n: 0, sc: 0, c: 0 });
-    const acc = pct(tot.c, tot.sc);
-    html += `<div class="subj-head"><h2>${SUBJECTS[code]}</h2><span class="badge">${tot.n} attempted</span>${tot.sc ? `<span class="badge ${acc >= 60 ? 'good' : acc >= 40 ? 'warn' : 'bad'}">${acc}% accuracy</span>` : '<span class="badge">no scored attempts yet</span>'}</div>
-      <div class="card tablecard"><table class="stats"><thead><tr><th>Unit</th><th class="num">Attempted</th><th class="num">Accuracy</th><th class="hide-sm"></th></tr></thead><tbody>
-      ${Object.keys(avail).map(Number).sort((a, b) => a - b).filter((u) => u || rows[0]).map((u) => {
-        const r = rows[u] || { n: 0, sc: 0, c: 0 }, a = pct(r.c, r.sc);
-        return `<tr><td>${u ? `${u}. ${esc(unitName(code, u))}` : 'Untagged'}</td><td class="num">${r.n}/${avail[u]}</td>
-          <td class="num">${r.sc ? a + '%' : '—'}</td>
-          <td class="hide-sm" style="width:28%"><div class="bar"><div style="width:${r.sc ? a : 0}%;background:${a >= 60 ? 'var(--good)' : a >= 40 ? 'var(--warn)' : 'var(--bad)'}"></div></div></td></tr>`;
-      }).join('')}</tbody></table></div>`;
+  // Scope: every attempt (by subject), or the questions of one paper you have attempted
+  const tried = (p) => p.questions.some((q) => store.attempts[q.id]);
+  const groups = [['Full exams', DB.fulls], ['Paper 1', DB.papers.filter((p) => p.subject_code === '00')], ['Philosophy', DB.papers.filter((p) => p.subject_code === '03')], ['Mock exams', DB.mocks]]
+    .map(([l, ps]) => [l, ps.filter(tried)]).filter(([, ps]) => ps.length);
+  let scope = store.prefs.statsScope || 'all';
+  if (scope !== 'all' && !(DB.byPaper[scope] && tried(DB.byPaper[scope]))) scope = 'all';
+  const outcome = (id) => { const a = store.attempts[id]; return a ? a.c : undefined; };
+  let html = `<div class="page-head"><div><h1>Stats</h1><p>Accuracy by unit and topic, your exam history and your saved data.</p></div></div>
+    <div class="toolbar"><label class="filters">Show <select id="scope"><option value="all">All papers (combined)</option>
+      ${groups.map(([l, ps]) => `<optgroup label="${l}">${ps.map((p) => `<option value="${p.paper_id}" ${p.paper_id === scope ? 'selected' : ''}>${esc(paperTitle(p))}</option>`).join('')}</optgroup>`).join('')}</select></label></div>
+    ${scope === 'all' ? '<p class="muted small">Every question you have answered in practice and exams, by subject (mock papers are counted only in their own view). Your latest answer to each question counts.</p>'
+      : `<p class="muted small">Your latest answer to each question of this paper. <a href="#/paper/${scope}">Open the paper</a></p>`}`;
+  const subs = scope === 'all'
+    ? Object.keys(SUBJECTS).map((code) => breakdown(DB.papers.filter((p) => p.subject_code === code).flatMap((p) => p.questions.map((q) => q.id)), outcome)[0]).filter(Boolean)
+    : breakdown(DB.byPaper[scope].questions.map((q) => q.id), outcome);
+  for (const S of subs) {
+    const acc = pct(S.c, S.sc);
+    html += `<div class="subj-head"><h2>${SUBJECTS[S.code]}</h2><span class="badge">${S.n}${scope === 'all' ? '' : `/${S.avail}`} attempted</span>${S.sc ? `<span class="badge ${acc >= 60 ? 'good' : acc >= 40 ? 'warn' : 'bad'}">${acc}% accuracy</span>` : '<span class="badge">no scored attempts yet</span>'}</div>
+      ${breakdownHTML(S, 'stats')}`;
   }
   if (store.history.length) html += `<h2>Exam history</h2><div class="card tablecard">${historyTable(store.history.slice(0, 30))}</div>`;
   html += `<h2>Your data</h2><div class="card"><p class="small muted" style="margin-top:0">Progress lives in this browser's storage. Export it to back up, or to carry it to another device or browser.</p>
@@ -916,6 +1016,7 @@ function viewStats() {
     <label class="btn">${ic('upload')}Import progress<input type="file" id="import" accept=".json,application/json" hidden></label>
     <span class="spacer"></span><button class="btn danger" id="reset">${ic('trash')}Reset all progress</button></div></div>`;
   app().innerHTML = html;
+  $('#scope').onchange = (e) => { store.prefs.statsScope = e.target.value; save(); viewStats(); };
   $('#export').onclick = () => {
     const blob = new Blob([JSON.stringify(store)], { type: 'application/json' });
     const a = document.createElement('a');
@@ -971,7 +1072,7 @@ function viewAttempt(t) {
   const rows = all.filter((r) => f === 'all' || r.s === f);
   const lab = (q, i) => (i == null ? '–' : `(${esc(q.option_labels[i])})`);
   app().innerHTML = head + `
-    ${(() => { const sc = sectionScores(qids, h.answers); return summaryCard(sc, h.secs) + cutoffPanel(DB.byPaper[h.paperId], sc); })()}
+    ${(() => { const sc = sectionScores(qids, h.answers); return summaryCard(sc, h.secs) + mockLevelNote(DB.byPaper[h.paperId]) + cutoffPanel(DB.byPaper[h.paperId], sc) + `<details class="sheet-bd"><summary><h2>By unit and topic</h2></summary>${examBreakdown(qids, h.answers).replace('<h2>By unit and topic</h2>', '')}</details><h2>Your answers</h2>`; })()}
     <div class="toolbar"><div class="seg" id="sheetF">${[['all', 'All', all.length], ['wrong', 'Wrong', n('wrong')], ['blank', 'Not answered', n('blank')], ['right', 'Correct', n('right')]]
       .map(([v, l, c]) => `<button data-v="${v}" class="${f === v ? 'on' : ''}">${l} <span class="muted">${c}</span></button>`).join('')}</div></div>
     ${rows.length ? rows.map(({ id, i, s }) => {
@@ -994,13 +1095,13 @@ function viewAttempt(t) {
       if (!scorable(q) && i === q.best_index) cls += ' suggested';
       return `<li><div class="opt ${cls}"><span class="lab">${esc(q.option_labels[i])}</span><span class="md">${md(o)}</span>${q.key_doubt && i === q.best_index ? '<span class="badge warn">Likely correct</span>' : ''}<span class="tick ok">${ic('check')}</span><span class="tick no">${ic('x')}</span></div></li>`;
     }).join('');
-    body.innerHTML = `${g ? `<details class="group"><summary>${g.kind === 'passage' ? 'Passage' : g.kind === 'data_table' ? 'Data' : 'Figure'} for this question</summary><div class="md">${md(g.md)}</div>${g.image ? `<img class="qimg" src="${imgSrc(g.image)}" alt="">` : ''}</details>` : ''}
+    body.innerHTML = `${topicLine(q)}${g ? `<details class="group"><summary>${g.kind === 'passage' ? 'Passage' : g.kind === 'data_table' ? 'Data' : 'Figure'} for this question</summary><div class="md">${md(g.md)}</div>${g.image ? `<img class="qimg" src="${imgSrc(g.image)}" alt="">` : ''}</details>` : ''}
       <div class="md qtext">${md(q.question_md)}</div>${q.image ? `<img class="qimg" src="${imgSrc(q.image)}" alt="">` : ''}
       <ol class="options">${opts}</ol>
       ${q.key_doubt ? `<div class="note warn">${ic('alert')}<span>The key's answer looks doubtful. The explanation gives the reason.</span></div>` : ''}
       ${q.explanation ? `<div class="explain"><div class="explain-head"><span class="ic">${ic('bulb')}</span>Explanation</div><div class="md">${md(q.explanation)}</div></div>` : ''}
       ${q.notes ? `<div class="note">${ic('info')}<span>Note: ${esc(q.notes)}</span></div>` : ''}
-      <p class="small muted" style="margin:.8rem 0 0">${esc(paperTitle(q.paper))} · Q${q.number}${q.unit ? ` · Unit ${q.unit}: ${esc(unitName(q.paper.subject_code, q.unit))}` : ''}</p>`;
+      <p class="small muted" style="margin:.8rem 0 0">${esc(paperTitle(q.paper))} · Q${q.number}</p>`;
   }));
 }
 
